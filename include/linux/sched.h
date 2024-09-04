@@ -72,6 +72,9 @@ struct signal_struct;
 struct task_delay_info;
 struct task_group;
 
+/* new-add-patch-12/36 */
+#include <linux/sched/ext.h>
+/* new-end-patch-12/36 */
 /*
  * Task state bitmask. NOTE! These bits are also
  * encoded in fs/proc/array.c: get_task_state().
@@ -800,6 +803,12 @@ struct task_struct {
 	struct sched_entity		se;
 	struct sched_rt_entity		rt;
 	struct sched_dl_entity		dl;
+    /* new-add-patch-12/36 */
+#ifdef CONFIG_SCHED_CLASS_EXT
+    struct sched_ext_entity		scx;
+#endif
+    /* new-end-patch-12/36 */
+
 	const struct sched_class	*sched_class;
 
 #ifdef CONFIG_SCHED_CORE

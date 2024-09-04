@@ -28,6 +28,12 @@
 #include <linux/suspend.h>
 #include <linux/tsacct_kern.h>
 #include <linux/vtime.h>
+/* new-add-patch-14/36 */
+#include <linux/sysrq.h>
+/* new-end-patch-14/36 */
+/* new-add-patch-12/36 */
+#include <linux/percpu-rwsem.h>
+/* new-end-patch-12/36 */
 
 #include <uapi/linux/sched/types.h>
 
@@ -52,3 +58,8 @@
 #include "cputime.c"
 #include "deadline.c"
 
+/* new-add-patch-12/36 */
+#ifdef CONFIG_SCHED_CLASS_EXT
+# include "ext.c"
+#endif
+/* new-end-patch-12/36 */

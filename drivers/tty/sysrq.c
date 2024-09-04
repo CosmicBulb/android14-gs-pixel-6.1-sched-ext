@@ -525,6 +525,9 @@ static const struct sysrq_key_op *sysrq_key_table[62] = {
 	NULL,				/* P */
 	NULL,				/* Q */
 	NULL,				/* R */
+    /* new-add-patch-14/36 */
+    /* S: May be registered by sched_ext for resetting */
+    /* new-end-patch-14/36 */
 	NULL,				/* S */
 	NULL,				/* T */
 	NULL,				/* U */

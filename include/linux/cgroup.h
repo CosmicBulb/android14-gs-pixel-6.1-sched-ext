@@ -30,7 +30,7 @@
 
 struct kernel_clone_args;
 
-#ifdef CONFIG_CGROUPS
+
 
 /*
  * All weight knobs on the default hierarchy should use the following min,
@@ -40,6 +40,10 @@ struct kernel_clone_args;
 #define CGROUP_WEIGHT_MIN		1
 #define CGROUP_WEIGHT_DFL		100
 #define CGROUP_WEIGHT_MAX		10000
+
+/* new-add-patch-6/36 */
+#ifdef CONFIG_CGROUPS
+/* new-add-patch-6/36 */
 
 /* walk only threadgroup leaders */
 #define CSS_TASK_ITER_PROCS		(1U << 0)
@@ -118,6 +122,9 @@ int cgroup_transfer_tasks(struct cgroup *to, struct cgroup *from);
 int cgroup_add_dfl_cftypes(struct cgroup_subsys *ss, struct cftype *cfts);
 int cgroup_add_legacy_cftypes(struct cgroup_subsys *ss, struct cftype *cfts);
 int cgroup_rm_cftypes(struct cftype *cfts);
+/* new-add-patch-1/36 */
+void cgroup_show_cftype(struct cftype *cft, bool show);
+/* new-end-patch-1/36 */
 void cgroup_file_notify(struct cgroup_file *cfile);
 void cgroup_file_show(struct cgroup_file *cfile, bool show);
 
