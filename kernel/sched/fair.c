@@ -3342,8 +3342,11 @@ static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 		update_load_add(&cfs_rq->load, se->load.weight);
 
 }
-
-void reweight_task(struct task_struct *p, int prio)
+/* new-add-patch-4/36 */
+/*void reweight_task(struct task_struct *p, int prio)*/
+//static
+void reweight_task(struct rq *rq, struct task_struct *p, int prio)
+/* new-end-patch-4/36 */
 {
 	struct sched_entity *se = &p->se;
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
@@ -7778,7 +7781,11 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	 * Batch and idle tasks do not preempt non-idle tasks (their preemption
 	 * is driven by the tick):
 	 */
-	if (unlikely(p->policy != SCHED_NORMAL) || !sched_feat(WAKEUP_PREEMPTION))
+
+    /* new-add-patch-10/36 */
+/*	if (unlikely(p->policy != SCHED_NORMAL) || !sched_feat(WAKEUP_PREEMPTION))*/
+    if (unlikely(!normal_policy(p->policy)) || !sched_feat(WAKEUP_PREEMPTION))
+    /* new-end-patch-10/36 */
 		return;
 
 	find_matching_se(&se, &pse);
@@ -11852,14 +11859,20 @@ void trigger_load_balance(struct rq *rq)
 	nohz_balancer_kick(rq);
 }
 
-static void rq_online_fair(struct rq *rq)
+/* new-add-patch-9/36 */
+/*static void rq_online_fair(struct rq *rq)*/
+static void rq_online_fair(struct rq *rq, enum rq_onoff_reason reason)
+/* new-end-patch-9/36 */
 {
 	update_sysctl();
 
 	update_runtime_enabled(rq);
 }
 
-static void rq_offline_fair(struct rq *rq)
+/* new-add-patch-9/36 */
+/*static void rq_offline_fair(struct rq *rq)*/
+static void rq_offline_fair(struct rq *rq, enum rq_onoff_reason reason)
+/* new-end-patch-9/36 */
 {
 	update_sysctl();
 
@@ -12592,6 +12605,9 @@ DEFINE_SCHED_CLASS(fair) = {
 	.task_tick		= task_tick_fair,
 	.task_fork		= task_fork_fair,
 
+    /* new-add-patch-4/36 */
+//    .reweight_task		= reweight_task_fair,
+    /* new-end-patch-4/36 */
 	.prio_changed		= prio_changed_fair,
 	.switched_from		= switched_from_fair,
 	.switched_to		= switched_to_fair,
@@ -12608,7 +12624,7 @@ DEFINE_SCHED_CLASS(fair) = {
 	.uclamp_enabled		= 1,
 #endif
 };
-
+EXPORT_SYMBOL(fair_sched_class);
 #ifdef CONFIG_SCHED_DEBUG
 void print_cfs_stats(struct seq_file *m, int cpu)
 {

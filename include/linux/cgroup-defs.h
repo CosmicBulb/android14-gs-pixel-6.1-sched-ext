@@ -126,12 +126,22 @@ enum {
 	CFTYPE_NO_PREFIX	= (1 << 3),	/* (DON'T USE FOR NEW FILES) no subsys prefix */
 	CFTYPE_WORLD_WRITABLE	= (1 << 4),	/* (DON'T USE FOR NEW FILES) S_IWUGO */
 	CFTYPE_DEBUG		= (1 << 5),	/* create when cgroup_debug */
+    /* new-add-patch-1/36 */
+    CFTYPE_HIDDEN		= (1 << 6),	/* file type hidden, see cgroup_show_cftypes() */
+    /* new-end-patch-1/36 */
+
 
 	/* internal flags, do not use outside cgroup core proper */
 	__CFTYPE_ONLY_ON_DFL	= (1 << 16),	/* only on default hierarchy */
 	__CFTYPE_NOT_ON_DFL	= (1 << 17),	/* not on default hierarchy */
 	__CFTYPE_ADDED		= (1 << 18),
 };
+
+//new-add-patch-1/36
+enum cfile_flags {
+	CFILE_HIDDEN		= (1 << 0),	/* file instance hidden */
+};
+//new-end-patch-1/36
 
 /*
  * cgroup_file is the handle for a file instance created in a cgroup which
@@ -140,9 +150,17 @@ enum {
  */
 struct cgroup_file {
 	/* do not access any fields from outside cgroup core */
+
+    /* new-add-patch-1/36 */
+    struct cftype *cft;
+    /* new-end-patch-1/36 */
 	struct kernfs_node *kn;
+    /* new-add-patch-1/36 */
+    unsigned int flags;
+    /* new-end-patch-1/36 */
 	unsigned long notified_at;
 	struct timer_list notify_timer;
+
 };
 
 /*

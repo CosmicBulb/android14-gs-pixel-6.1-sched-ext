@@ -184,9 +184,24 @@ static inline int idle_policy(int policy)
 {
 	return policy == SCHED_IDLE;
 }
+
+/* new-add-patch-10/36 */
+static inline int normal_policy(int policy)
+{
+#ifdef CONFIG_SCHED_CLASS_EXT
+    if (policy == SCHED_EXT)
+		return true;
+#endif
+    return policy == SCHED_NORMAL;
+}
+/* new-end-patch-10/36 */
+
 static inline int fair_policy(int policy)
 {
-	return policy == SCHED_NORMAL || policy == SCHED_BATCH;
+    /* new-add-patch-10/36 */
+	/*return policy == SCHED_NORMAL || policy == SCHED_BATCH;*/
+    return normal_policy(policy) || policy == SCHED_BATCH;
+    /* new-end-patch-10/36 */
 }
 
 static inline int rt_policy(int policy)
@@ -233,6 +248,26 @@ static inline void update_avg(u64 *avg, u64 sample)
  */
 #define shr_bound(val, shift)							\
 	(val >> min_t(typeof(shift), shift, BITS_PER_TYPE(typeof(val)) - 1))
+
+/*
+ * cgroup weight knobs should use the common MIN, DFL and MAX values which are
+ * 1, 100 and 10000 respectively. While it loses a bit of range on both ends, it
+ * maps pretty well onto the shares value used by scheduler and the round-trip
+ * conversions preserve the original value over the entire range.
+ */
+/* new-add-patch-7/36 */
+static inline unsigned long sched_weight_from_cgroup(unsigned long cgrp_weight)
+{
+    return DIV_ROUND_CLOSEST_ULL(cgrp_weight * 1024, CGROUP_WEIGHT_DFL);
+}
+
+static inline unsigned long sched_weight_to_cgroup(unsigned long weight)
+{
+    return clamp_t(unsigned long,
+                   DIV_ROUND_CLOSEST_ULL(weight * CGROUP_WEIGHT_DFL, 1024),
+                   CGROUP_WEIGHT_MIN, CGROUP_WEIGHT_MAX);
+}
+/* new-end-patch-7/36 */
 
 /*
  * !! For sched_setattr_nocheck() (kernel) only !!
@@ -398,6 +433,13 @@ struct task_group {
 	struct rt_bandwidth	rt_bandwidth;
 #endif
 
+    /* new-add-patch-25/36 */
+#ifdef CONFIG_EXT_GROUP_SCHED
+	u32			scx_flags;	/* SCX_TG_* */
+	u32			scx_weight;
+#endif
+    /* new-end-patch-25/36 */
+
 	struct rcu_head		rcu;
 	struct list_head	list;
 
@@ -461,6 +503,13 @@ static inline int walk_tg_tree(tg_visitor down, tg_visitor up, void *data)
 	return walk_tg_tree_from(&root_task_group, down, up, data);
 }
 
+/* new-add-patch-7/36 */
+static inline struct task_group *css_tg(struct cgroup_subsys_state *css)
+{
+	return css ? container_of(css, struct task_group, css) : NULL;
+}
+/* new-end-patch-7/36 */
+
 extern int tg_nop(struct task_group *tg, void *data);
 
 extern void free_fair_sched_group(struct task_group *tg);
@@ -505,6 +554,13 @@ extern void set_task_rq_fair(struct sched_entity *se,
 static inline void set_task_rq_fair(struct sched_entity *se,
 			     struct cfs_rq *prev, struct cfs_rq *next) { }
 #endif /* CONFIG_SMP */
+/* new-add-patch-25/36 */
+#else /* CONFIG_FAIR_GROUP_SCHED */
+static inline int sched_group_set_shares(struct task_group *tg, unsigned long shares)
+{
+	return 0;
+}
+/* new-end-patch-25/36 */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
 #else /* CONFIG_CGROUP_SCHED */
@@ -658,6 +714,29 @@ struct cfs_rq {
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 };
+
+#ifdef CONFIG_SCHED_CLASS_EXT
+/* scx_rq->flags, protected by the rq lock */
+enum scx_rq_flags {
+//	SCX_RQ_BALANCING	= 1 << 0,
+	SCX_RQ_CAN_STOP_TICK	= 1 << 0,
+};
+
+struct scx_rq {
+	struct scx_dispatch_q	local_dsq;
+    struct list_head	watchdog_list;
+	unsigned long		ops_qseq;
+	u64			extra_enq_flags;	/* see move_task_to_local_dsq() */
+	u32			nr_running;
+	u32			flags;
+	bool			cpu_released;
+	cpumask_var_t		cpus_to_kick;
+	cpumask_var_t		cpus_to_preempt;
+	cpumask_var_t		cpus_to_wait;
+	unsigned long		pnt_seq;
+	struct irq_work		kick_cpus_irq_work;
+};
+#endif /* CONFIG_SCHED_CLASS_EXT */
 
 static inline int rt_bandwidth_enabled(void)
 {
@@ -1008,6 +1087,9 @@ struct rq {
 	struct cfs_rq		cfs;
 	struct rt_rq		rt;
 	struct dl_rq		dl;
+#ifdef CONFIG_SCHED_CLASS_EXT
+    struct scx_rq		scx;
+#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this CPU: */
@@ -2192,6 +2274,21 @@ extern const u32		sched_prio_to_wmult[40];
 
 #define RETRY_TASK		((void *)-1UL)
 
+/* new-add-patch-9/36 */
+enum rq_onoff_reason {
+    RQ_ONOFF_HOTPLUG,		/* CPU is going on/offline */
+    RQ_ONOFF_TOPOLOGY,		/* sched domain topology update */
+};
+/* new-end-patch-9/36 */
+
+/* new-add zjh*/
+struct affinity_context {
+    const struct cpumask *new_mask;
+    struct cpumask *user_mask;
+    unsigned int flags;
+};
+/* new-add zjh*/
+
 struct sched_class {
 
 #ifdef CONFIG_UCLAMP_TASK
@@ -2224,8 +2321,12 @@ struct sched_class {
 				 const struct cpumask *newmask,
 				 u32 flags);
 
-	void (*rq_online)(struct rq *rq);
-	void (*rq_offline)(struct rq *rq);
+    /* new-add-patch-9/36 */
+/*    void (*rq_online)(struct rq *rq);
+	void (*rq_offline)(struct rq *rq);*/
+    void (*rq_online)(struct rq *rq, enum rq_onoff_reason reason);
+	void (*rq_offline)(struct rq *rq, enum rq_onoff_reason reason);
+    /* new-end-patch-9/36 */
 
 	struct rq *(*find_lock_rq)(struct task_struct *p, struct rq *rq);
 #endif
@@ -2239,8 +2340,15 @@ struct sched_class {
 	 * cannot assume the switched_from/switched_to pair is serialized by
 	 * rq->lock. They are however serialized by p->pi_lock.
 	 */
+    /* new-add-patch-5/36 */
+    void (*switching_to) (struct rq *this_rq, struct task_struct *task);
+    /* new-end-patch-5/36 */
 	void (*switched_from)(struct rq *this_rq, struct task_struct *task);
 	void (*switched_to)  (struct rq *this_rq, struct task_struct *task);
+    /* new-add-patch-4/36 */
+//    void (*reweight_task)(struct rq *this_rq, struct task_struct *task,
+//                          int newprio);
+    /* new-end-patch-4/36 */
 	void (*prio_changed) (struct rq *this_rq, struct task_struct *task,
 			      int oldprio);
 
@@ -2335,6 +2443,9 @@ extern void trigger_load_balance(struct rq *rq);
 
 extern void set_cpus_allowed_common(struct task_struct *p, const struct cpumask *new_mask, u32 flags);
 
+extern void set_cpus_allowed_common_ext(struct task_struct *p, struct affinity_context *ctx);
+
+
 static inline struct task_struct *get_push_task(struct rq *rq)
 {
 	struct task_struct *p = rq->curr;
@@ -2394,7 +2505,14 @@ extern void init_sched_dl_class(void);
 extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
 
-extern void reweight_task(struct task_struct *p, int prio);
+/* new-add-patch-7/36 */
+extern void __setscheduler_prio(struct task_struct *p, int prio);
+/* new-end-patch-7/36 */
+
+/* new-add-patch-4/36 */
+extern void reweight_task(struct rq *rq, struct task_struct *p, int prio);
+extern void reweight_task_scx(struct rq *rq, struct task_struct *p, int newprio);
+/* new-end-patch-4/36 */
 
 extern void resched_curr(struct rq *rq);
 extern void resched_cpu(int cpu);
@@ -2475,6 +2593,14 @@ static inline void sub_nr_running(struct rq *rq, unsigned count)
 
 extern void activate_task(struct rq *rq, struct task_struct *p, int flags);
 extern void deactivate_task(struct rq *rq, struct task_struct *p, int flags);
+
+/* new-add-patch-5/36 */
+extern void check_class_changing(struct rq *rq, struct task_struct *p,
+                                 const struct sched_class *prev_class);
+extern void check_class_changed(struct rq *rq, struct task_struct *p,
+                                const struct sched_class *prev_class,
+                                int oldprio);
+/* new-end-patch-5/36 */
 
 extern void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags);
 
@@ -2743,8 +2869,12 @@ static inline void double_rq_unlock(struct rq *rq1, struct rq *rq2)
 	raw_spin_rq_unlock(rq1);
 }
 
-extern void set_rq_online (struct rq *rq);
-extern void set_rq_offline(struct rq *rq);
+/* new-add-patch-9/36 */
+/*extern void set_rq_online (struct rq *rq);
+extern void set_rq_offline(struct rq *rq);*/
+extern void set_rq_online (struct rq *rq, enum rq_onoff_reason reason);
+extern void set_rq_offline(struct rq *rq, enum rq_onoff_reason reason);
+/* new-end-patch-9/36 */
 extern bool sched_smp_initialized;
 
 #else /* CONFIG_SMP */
@@ -3278,4 +3408,33 @@ static inline void update_current_exec_runtime(struct task_struct *curr,
 }
 
 extern bool cpu_busy_with_softirqs(int cpu);
+
+/* new-add-patch-8/36 */
+#ifdef CONFIG_CGROUP_SCHED
+enum cpu_cftype_id {
+#if defined(CONFIG_FAIR_GROUP_SCHED) || defined(CONFIG_EXT_GROUP_SCHED)
+	CPU_CFTYPE_WEIGHT,
+	CPU_CFTYPE_WEIGHT_NICE,
+	CPU_CFTYPE_IDLE,
+#endif
+#ifdef CONFIG_CFS_BANDWIDTH
+	CPU_CFTYPE_MAX,
+	CPU_CFTYPE_MAX_BURST,
+#endif
+#ifdef CONFIG_UCLAMP_TASK_GROUP
+	CPU_CFTYPE_UCLAMP_MIN,
+	CPU_CFTYPE_UCLAMP_MAX,
+    CPU_CFTYPE_UCLAMP_MAX_LATENCY_SENSITIVE,
+#endif
+	CPU_CFTYPE_CNT,
+};
+
+extern struct cftype cpu_cftypes[CPU_CFTYPE_CNT + 1];
+#endif /* CONFIG_CGROUP_SCHED */
+/* new-end-patch-8/36 */
+
+/* new-add-patch-11/36 */
+#include "ext.h"
+/* new-end-patch-11/36 */
+
 #endif /* _KERNEL_SCHED_SCHED_H */

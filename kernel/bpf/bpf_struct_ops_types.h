@@ -9,4 +9,10 @@ BPF_STRUCT_OPS_TYPE(bpf_dummy_ops)
 #include <net/tcp.h>
 BPF_STRUCT_OPS_TYPE(tcp_congestion_ops)
 #endif
+/* new-add-patch-12/36 */
+#ifdef CONFIG_SCHED_CLASS_EXT
+#include <linux/sched/ext.h>
+BPF_STRUCT_OPS_TYPE(sched_ext_ops)
+#endif
+/* new-end-patch-12/36 */
 #endif
